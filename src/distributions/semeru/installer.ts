@@ -8,7 +8,8 @@ import semver from 'semver';
 import {
   extractJdkFile,
   getDownloadArchiveExtension,
-  isVersionSatisfies
+  isVersionSatisfies,
+  renameWinArchive
 } from '../../util';
 import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
@@ -33,11 +34,15 @@ export class SemeruDistribution extends JavaBase {
   protected async findPackageForDownload(
     version: string
   ): Promise<JavaDownloadRelease> {
-    if (!supportedArchitectures.includes(this.architecture)) {
+    const arch = this.distributionArchitecture();
+
+    if (!supportedArchitectures.includes(arch)) {
       throw new Error(
         `Unsupported architecture for IBM Semeru: ${
           this.architecture
-        }, the following are supported: ${supportedArchitectures.join(', ')}`
+        } for your current OS version, the following are supported: ${supportedArchitectures.join(
+          ', '
+        )}`
       );
     }
 
@@ -81,7 +86,7 @@ export class SemeruDistribution extends JavaBase {
         ? `\nAvailable versions: ${availableOptions}`
         : '';
       throw new Error(
-        `Could not find satisfied version for SemVer '${version}'. ${availableOptionsMessage}`
+        `Could not find satisfied version for SemVer version '${version}' for your current OS version for ${this.architecture} architecture ${availableOptionsMessage}`
       );
     }
 
@@ -94,11 +99,13 @@ export class SemeruDistribution extends JavaBase {
     core.info(
       `Downloading Java ${javaRelease.version} (${this.distribution}) from ${javaRelease.url} ...`
     );
-    const javaArchivePath = await tc.downloadTool(javaRelease.url);
+    let javaArchivePath = await tc.downloadTool(javaRelease.url);
 
     core.info(`Extracting Java archive...`);
     const extension = getDownloadArchiveExtension();
-
+    if (process.platform === 'win32') {
+      javaArchivePath = renameWinArchive(javaArchivePath);
+    }
     const extractedJavaPath: string = await extractJdkFile(
       javaArchivePath,
       extension
@@ -124,7 +131,7 @@ export class SemeruDistribution extends JavaBase {
 
   public async getAvailableVersions(): Promise<ISemeruAvailableVersions[]> {
     const platform = this.getPlatformOption();
-    const arch = this.architecture;
+    const arch = this.distributionArchitecture();
     const imageType = this.packageType;
     const versionRange = encodeURI('[1.0,100.0]'); // retrieve all available versions
     const releaseType = this.stable ? 'ga' : 'ea';
